@@ -1,7 +1,9 @@
 package server
 
 import (
+	"log"
 	"net"
+	"strings"
 	"sync"
 )
 
@@ -24,6 +26,44 @@ func (s *Server) Register(path string, handler HandlerFunc) {
 }
 
 func (s *Server) Start() error {
-	// TODO: start server on host & port
-	return nil
+	ln, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+
+		go func() {
+			defer conn.Close()
+
+			path := "/" // Default path
+			buf := make([]byte, 4096)
+			n, err := conn.Read(buf)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			reqLine := string(buf[:n])
+			parts := strings.Split(reqLine, " ")
+			if len(parts) > 1 {
+				path = parts[1]
+			}
+
+			s.mu.RLock()
+			handler, ok := s.handlers[path]
+			s.mu.RUnlock()
+
+			if !ok {
+				return
+			}
+
+			handler(conn)
+		}()
+	}
 }
